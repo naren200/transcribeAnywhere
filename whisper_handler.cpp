@@ -24,12 +24,15 @@ private:
     std::atomic<bool> keepRunning{true};
     FILE* whisperPipe{nullptr};
     static WhisperStreamHandler* instance;
+    // Add these at class level
+    std::atomic<int> sigint_count{0};
+    std::chrono::steady_clock::time_point last_sigint_time;
 
     void initializeYdotool() {
         if (!ydotoolInitialized) {
             system("pkill ydotool"); // Kill any existing instances
             system("ydotool &>/dev/null &");
-            std::this_thread::sleep_for(std::chrono::milliseconds(700));
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
             ydotoolInitialized = true;
         }
     }
@@ -81,15 +84,25 @@ private:
 
     static void signalHandler(int signum) {
         if (instance && signum == SIGINT) {
-            std::cerr << "\n[SYSTEM] Ctrl+C received. Shutting down...\n";
+            auto now = std::chrono::steady_clock::now();
+            if (now - instance->last_sigint_time < std::chrono::seconds(1)) {
+                std::cerr << "\n[FORCED SHUTDOWN]\n";
+                _exit(EXIT_FAILURE);
+            }
+            
+            instance->last_sigint_time = now;
+            instance->sigint_count++;
+            
+            std::cerr << "\n[SHUTDOWN INITIATED - PRESS AGAIN TO FORCE]\n";
             instance->keepRunning = false;
+            
             if (instance->whisperPipe) {
-                fclose(instance->whisperPipe);
+                pclose(instance->whisperPipe);
                 instance->whisperPipe = nullptr;
             }
         }
     }
-
+    
     void inputHandler() {
         std::string command;
         while (keepRunning) {
