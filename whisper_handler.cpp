@@ -186,7 +186,7 @@ int main() {
     try {
         // Get device from environment variable or use default
         const char* env_device = std::getenv("CAPTURE_DEVICE");
-        int capture_device = 2; // Default value
+        int capture_device = 2;
         
         if(env_device != nullptr) {
             try {
