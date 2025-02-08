@@ -11,20 +11,20 @@
 #include <regex>
 #include <cstdlib>
 #include <thread>
-#include <chrono>
-
-
-struct TranscriptionData {
-    std::string text;
-    std::chrono::system_clock::time_point timestamp;
-    
-};
+#include <atomic>
+#include <csignal>
+#include <sys/types.h>
+#include <fcntl.h>
 
 class WhisperStreamHandler {
 private:
     std::string outputPath = "/app/output/live_transcript.txt";
     bool ydotoolInitialized = false;
-    
+    std::atomic<bool> transcriptionActive{true};
+    std::atomic<bool> keepRunning{true};
+    FILE* whisperPipe{nullptr};
+    static WhisperStreamHandler* instance;
+
     void initializeYdotool() {
         if (!ydotoolInitialized) {
             system("pkill ydotool"); // Kill any existing instances
@@ -57,9 +57,9 @@ private:
         }
     }
     void injectText(const std::string& text) {
-        std::string sanitized = std::regex_replace(text, std::regex("'"), "'\\''");
-        std::string cmd = "ydotool type '" + sanitized + "'";
-
+        std::string spacedText = "   "+text;
+        std::string sanitized = std::regex_replace(spacedText, std::regex("'"), "'\\''");
+        
         try {
             if (!ydotoolInitialized) {
                 initializeYdotool();
@@ -77,13 +77,75 @@ private:
         } catch (const std::exception& e) {
             std::cerr << "Error injecting text: " << e.what() << std::endl;
         }
+    }
 
+    static void signalHandler(int signum) {
+        if (instance && signum == SIGINT) {
+            std::cerr << "\n[SYSTEM] Ctrl+C received. Shutting down...\n";
+            instance->keepRunning = false;
+            // Force pipe to unblock by closing it
+            if (instance->whisperPipe) {
+                fclose(instance->whisperPipe);
+                instance->whisperPipe = nullptr;
+            }
+            // Exit immediately if multiple Ctrl+C presses
+            static int ctrlc_count = 0;
+            if (++ctrlc_count >= 2) {
+                exit(1);
+            }
+        }
+    }
+
+    
+    void inputHandler() {
+        std::string command;
+        while (keepRunning) {
+            std::getline(std::cin, command);
+            
+            for(size_t i = 0; i < command.length() - 1; ++i) {
+                if(command[i] == '!') {
+                    const char next = std::tolower(command[i+1]);
+                    if(next == 's') {
+                        transcriptionActive = true;
+                        std::cout << "\n[SYSTEM] Transcription RESUMED\n";
+                        break;
+                    }
+                    else if(next == 'p') {
+                        transcriptionActive = false;
+                        std::cout << "\n[SYSTEM] Transcription PAUSED\n";
+                        break;
+                    }
+                    else if(next == 'e') {
+                        keepRunning = false;
+                        std::cout << "\n[SYSTEM] Shutting down...\n";
+                        if (whisperPipe) {
+                            fclose(whisperPipe);
+                            whisperPipe = nullptr;
+                        }
+                        break;
+                    }
+                }
+            }
+        }
     }
         
 public:
     WhisperStreamHandler() {
+        instance = this;
+        struct sigaction sa;
+        sa.sa_handler = signalHandler;
+        sigemptyset(&sa.sa_mask);
+        sa.sa_flags = 0;
+        sigaction(SIGINT, &sa, nullptr);
+        
         initializeFile(); 
         initializeYdotool();
+    }
+
+    ~WhisperStreamHandler() {
+        if (whisperPipe) {
+            fclose(whisperPipe);
+        }
     }
 
     std::string executeCommand(const std::string& cmd) {
@@ -108,75 +170,52 @@ public:
     }
 
     void processWhisperStream(const std::string& modelPath, int captureDevice) {
-        std::string cmd = "stdbuf -oL /usr/local/src/whisper.cpp/build/bin/whisper-stream -m " + modelPath + 
-                         " --capture " + std::to_string(captureDevice);
-        // Configure streams
-        std::cout << std::unitbuf;
-        std::ios_base::sync_with_stdio(false);
+        std::string cmd = "stdbuf -oL /usr/local/src/whisper.cpp/build/bin/whisper-stream -m " + 
+                         modelPath + " --capture " + std::to_string(captureDevice);
 
-
-        FILE* pipe = popen(cmd.c_str(), "r");
-        if (!pipe) {
+        std::thread inputThread([this]() { inputHandler(); });
+        
+        whisperPipe = popen(cmd.c_str(), "r");
+        if (!whisperPipe) {
             throw std::runtime_error("Failed to start whisper-stream");
         }
 
         char buffer[1024];
         std::string currentLine;
-        std::regex ansiEscape(R"(\x1B\[[0-9;]*[A-Za-z])");  // ANSI escape pattern
+        std::regex ansiEscape(R"(\x1B\[[0-9;]*[A-Za-z])");
 
-        while (fgets(buffer, sizeof(buffer), pipe)) {
+        while (keepRunning && fgets(buffer, sizeof(buffer), whisperPipe)) {
             currentLine = buffer;
             
-            std::cout << "RAW_OUTPUT" << currentLine;
+            // std::cout << "RAW_OUTPUT" << currentLine;
 
             // Inside the processing loop
             if (!currentLine.empty()) {
-                TranscriptionData data{
-                    currentLine,
-                    std::chrono::system_clock::now()
-                };
-                // Inside processWhisperStream() after reading currentLine:
-                std::string processedLine;
-                size_t lastPos = 0;
-                std::sregex_iterator it(currentLine.begin(), currentLine.end(), ansiEscape);
-                std::sregex_iterator end;
+                currentLine = std::regex_replace(currentLine, ansiEscape, "");
+                currentLine = std::regex_replace(currentLine, std::regex(R"(\s*[\[\{].*?[\]\}])"), "");
+                currentLine = std::regex_replace(currentLine, std::regex(R"(\s*[\(\{].*?[\)\}])"), "");
+                currentLine = std::regex_replace(currentLine, std::regex(R"(\s+)"), " ");
+                currentLine = std::regex_replace(currentLine, std::regex(R"(^\s+|\s+$)"), " ");
 
-                for (; it != end; ++it) {
-                    std::smatch match = *it;
-                    size_t escapeStart = match.position();
-                    size_t escapeLength = match.length();
-
-                    size_t lastNewline = currentLine.rfind('\n', escapeStart);
-                    
-                    if (lastNewline != std::string::npos) {
-                        processedLine += currentLine.substr(lastPos, lastNewline - lastPos + 1);
-                        lastPos = lastNewline + 1;
-                    } else {
-                        lastPos = escapeStart;
-                    }
-                    lastPos = escapeStart + escapeLength;
-                }
-
-                processedLine += currentLine.substr(lastPos);
-                currentLine = std::regex_replace(processedLine, ansiEscape, "");
-
-
-                // Collapse whitespace and clean line
-                currentLine = std::regex_replace(currentLine, std::regex(R"(\s+)"), " ");  // Multiple spaces -> single
-                currentLine = std::regex_replace(currentLine, std::regex(R"(^\s+|\s+$)"), " ");  // Trim edges
-
-                // After cleaning the transcribed text in processWhisperStream():
-                if (!currentLine.empty()) {
+                if (!currentLine.empty() && transcriptionActive) {
                     injectText(currentLine);
-                    // saveToFile(currentLine);
+                    std::cout << "\n[TRANSCRIPT] " << currentLine << std::endl;
                 }
-                
             }
-
         }
-        pclose(pipe);
+
+        keepRunning = false;
+        inputThread.join();
+        
+        if (whisperPipe) {
+            pclose(whisperPipe);
+            whisperPipe = nullptr;
+        }
     }
 };
+
+// Initialize static member
+WhisperStreamHandler* WhisperStreamHandler::instance = nullptr;
 
 int main() {
     WhisperStreamHandler handler;
@@ -193,7 +232,7 @@ int main() {
                 capture_device = std::stoi(env_device);
             } catch(const std::exception& e) {
                 std::cerr << "Invalid CAPTURE_DEVICE value: " 
-                        << env_device << " - using default 2\n";
+                         << env_device << " - using default 2\n";
             }
         }
 

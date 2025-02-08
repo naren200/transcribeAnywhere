@@ -3,8 +3,6 @@
 # Get the directory where this script resides
 SCRIPT_DIR=$(dirname "$(realpath "$0")")
 
-# Automatically set ROS workspace to the script's parent directory
-export LOCAL_WS="$SCRIPT_DIR"
 
 export AUDIO_GID=$(getent group audio | cut -d: -f3)
 
@@ -16,7 +14,7 @@ for arg in "$@"; do
   fi
 done
 
-# Set defaults if not specified
+export LOCAL_WS="$SCRIPT_DIR"
 export CAPTURE_DEVICE=${CAPTURE_DEVICE:-2}
 
 # Default developer mode
@@ -48,6 +46,8 @@ docker compose -f docker-compose.yml up -d $BUILD_MODE type_node --remove-orphan
 
 # Allow local connections to the X server
 xhost +local:docker
+
+chmod +x *.sh 
 
 echo "waiting..."
 # docker compose logs
