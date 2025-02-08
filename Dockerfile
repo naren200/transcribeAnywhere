@@ -1,29 +1,62 @@
-FROM python:3.9-slim
+# FROM anibali/pytorch:2.0.1-cuda11.8
+FROM ubuntu:22.04
 
-ENV DEBIAN_FRONTEND=noninteractive
+USER root 
 
-# Install required packages
-RUN apt-get update && apt-get install -y \
-    ffmpeg \
-    unzip \
-    sox \
+# Install base dependencies with proper package list formatting
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     git \
     make \
-    g++ \
-    xsel \
+    build-essential \
+    libsdl2-dev \
+    ffmpeg \
     wget \
-    curl \
-    cmake \
-    python3-pip \
-    libportaudio2 \
-    portaudio19-dev \
-    libasound2 \
-    libasound2-plugins \
-    libsndfile1 \
-    python3-pyaudio \
-    pulseaudio \
+    software-properties-common \
+    alsa-base \
     alsa-utils \
-    xdotool 
+    libasound2-dev \
+    g++ \
+    cmake \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y apt-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+
+RUN wget https://developer.download.nvidia.com/compute/cuda/11.8.0/local_installers/cuda-repo-ubuntu2204-11-8-local_11.8.0-520.61.05-1_amd64.deb \
+    && dpkg -i cuda-repo-ubuntu2204-11-8-local_11.8.0-520.61.05-1_amd64.deb \
+    && cp /var/cuda-repo-ubuntu2204-11-8-local/cuda-*-keyring.gpg /usr/share/keyrings/ \
+    && apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y cuda-11-8 \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm cuda-repo-ubuntu2204-11-8-local_11.8.0-520.61.05-1_amd64.deb
+
+
+ENV CUDA_HOME=/usr/local/cuda-11.8 \
+    PATH="/usr/local/cuda-11.8/bin:${PATH}" \
+    LD_LIBRARY_PATH="/usr/local/cuda-11.8/lib64:${LD_LIBRARY_PATH}"
+
+
+# Clone whisper.cpp
+WORKDIR /usr/local/src
+RUN git clone https://github.com/ggerganov/whisper.cpp.git -b v1.7.4 --depth 1
+
+
+# Build with explicit CUDA configuration
+WORKDIR /usr/local/src/whisper.cpp
+RUN bash ./models/download-ggml-model.sh small.en && \
+    cmake -B build \
+        -DWHISPER_SDL2=ON \
+        -DGGML_CUDA=1 \
+        -DCUDAToolkit_ROOT=/usr/local/cuda-11.8 && \
+    cmake --build build -j --config Release && \
+    make -j$(nproc) 
+
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    pulseaudio \
+    pulseaudio-utils \
+    libasound2-plugins \
+    && rm -rf /var/lib/apt/lists/*
 
 # Add ALSA config with explicit sample rateh
 RUN echo 'pcm.!default { \n\
@@ -38,31 +71,14 @@ RUN echo 'pcm.!default { \n\
     defaults.pcm.rate_converter "speexrate_best"\n\
     ' > /etc/asound.conf
 
+# Create non-root user for PulseAudio
+RUN useradd -m -G audio pulseuser
+
 # Add audio group
+WORKDIR /root/type_ws/
 RUN usermod -a -G audio root
+RUN apt-get update && apt install -y sox curl lame ydotool libsox-fmt-mp3 scdoc  \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
-RUN pip3 install vosk sounddevice numpy noisereduce scipy
-
-# Create working directory
-WORKDIR /app
-
-# Download Vosk model
-RUN mkdir model && \
-    cd model && \
-    # wget https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip && \
-    # unzip vosk-model-small-en-us-0.15.zip && \
-    # mv vosk-model-small-en-us-0.15 model
-    wget https://alphacephei.com/vosk/models/vosk-model-en-us-0.22-lgraph.zip && \
-    unzip vosk-model-en-us-0.22-lgraph.zip && \
-    mv vosk-model-en-us-0.22-lgraph model
-
-# Install Python dependencies
-RUN pip3 install vosk sounddevice numpy
-
-COPY ./transcribe.sh /app/
-COPY ./transcribe.py /app/
-RUN chmod +x transcribe.sh transcribe.py
-
-
-ENTRYPOINT ["/app/transcribe.sh"]
+# WORKDIR /usr/local/src/whisper.cpp/build/bin
+CMD ["tail", "-f", "/dev/null"]
