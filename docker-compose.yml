@@ -6,7 +6,7 @@ services:
     container_name: type_node
     devices:
       - /dev/snd:/dev/snd
-      - /dev/uinput:/dev/uinput  
+      # - /dev/uinput:/dev/uinput  
     network_mode: host
     deploy:
       resources:
@@ -19,16 +19,14 @@ services:
     volumes:
       - "${LOCAL_WS}/.:/root/type_ws/"
       - "./transcripts:/app/output"
-      # - "${LOCAL_WS}/whisper.cpp:/usr/local/src/whisper.cpp"
-      - /run/user/1000/pulse:/run/user/1000/pulse
-      - ${XDG_RUNTIME_DIR}/pulse/native:${XDG_RUNTIME_DIR}/pulse/native
-      - /tmp/.X11-unix:/tmp/.X11-unix:ro  # X11 socket
-      - ${XAUTHORITY:-$HOME/.Xauthority}:/root/.Xauthority:ro  # X authority file
-      - /tmp/.ydotool_socket:/tmp/ydotool_socket  # Shared socket
+      # - /run/user/1000/pulse:/run/user/1000/pulse
+      # - ${XDG_RUNTIME_DIR}/pulse/native:${XDG_RUNTIME_DIR}/pulse/native
+      # - /tmp/.X11-unix:/tmp/.X11-unix:ro  # X11 socket
+      # - ${XAUTHORITY:-$HOME/.Xauthority}:/root/.Xauthority:ro  # X authority file
+      # - /tmp/.ydotool_socket:/tmp/ydotool_socket  # Shared socket
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - CAPTURE_DEVICE=${CAPTURE_DEVICE}
     privileged: true
     stdin_open: true
     tty: true
-

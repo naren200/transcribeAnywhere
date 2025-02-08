@@ -1,8 +1,9 @@
-# Stage 1: Builder environment
-FROM ubuntu:22.04 as builder
+FROM ubuntu:22.04
 
-# Install build dependencies
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+USER root 
+
+# Install base dependencies with proper package list formatting
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     git \
     make \
     build-essential \
@@ -10,26 +11,37 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
     ffmpeg \
     wget \
     software-properties-common \
+    alsa-base \
+    alsa-utils \
+    libasound2-dev \
     g++ \
     cmake \
     && rm -rf /var/lib/apt/lists/*
 
-# Install CUDA
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y apt-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+
 RUN wget https://developer.download.nvidia.com/compute/cuda/11.8.0/local_installers/cuda-repo-ubuntu2204-11-8-local_11.8.0-520.61.05-1_amd64.deb \
     && dpkg -i cuda-repo-ubuntu2204-11-8-local_11.8.0-520.61.05-1_amd64.deb \
     && cp /var/cuda-repo-ubuntu2204-11-8-local/cuda-*-keyring.gpg /usr/share/keyrings/ \
     && apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends cuda-11-8 \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y cuda-11-8 \
     && rm -rf /var/lib/apt/lists/* \
     && rm cuda-repo-ubuntu2204-11-8-local_11.8.0-520.61.05-1_amd64.deb
+
 
 ENV CUDA_HOME=/usr/local/cuda-11.8 \
     PATH="/usr/local/cuda-11.8/bin:${PATH}" \
     LD_LIBRARY_PATH="/usr/local/cuda-11.8/lib64:${LD_LIBRARY_PATH}"
 
-# Build whisper.cpp
+
+# Clone whisper.cpp
 WORKDIR /usr/local/src
 RUN git clone https://github.com/ggerganov/whisper.cpp.git -b v1.7.4 --depth 1
+
+
+# Build with explicit CUDA configuration
 WORKDIR /usr/local/src/whisper.cpp
 RUN bash ./models/download-ggml-model.sh small.en && \
     cmake -B build \
@@ -39,37 +51,13 @@ RUN bash ./models/download-ggml-model.sh small.en && \
     cmake --build build -j --config Release && \
     make -j$(nproc) 
 
-# Stage 2: Runtime environment
-FROM ubuntu:22.04
-
-# Install runtime dependencies
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    libsdl2-2.0-0 \
-    ffmpeg \
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     pulseaudio \
     pulseaudio-utils \
     libasound2-plugins \
-    alsa-utils \
-    sox \
-    make \
-    lame \
-    ydotool \
-    libsox-fmt-mp3 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy CUDA runtime
-COPY --from=builder /usr/local/cuda-11.8/lib64 /usr/local/cuda-11.8/lib64/
-
-# Copy whisper.cpp artifacts
-COPY --from=builder /usr/local/src/whisper.cpp/build/ /usr/local/src/whisper.cpp/build/
-COPY --from=builder /usr/local/src/whisper.cpp/models/ggml-small.en.bin /usr/local/src/whisper.cpp/models/
-
-# Environment configuration
-ENV CUDA_HOME=/usr/local/cuda-11.8 \
-    PATH="/usr/local/cuda-11.8/bin:${PATH}" \
-    LD_LIBRARY_PATH="/usr/local/cuda-11.8/lib64:${LD_LIBRARY_PATH}"
-
-# Audio configuration
+# Add ALSA config with explicit sample rateh
 RUN echo 'pcm.!default { \n\
         type plug \n\
         slave { \n\
@@ -82,7 +70,14 @@ RUN echo 'pcm.!default { \n\
     defaults.pcm.rate_converter "speexrate_best"\n\
     ' > /etc/asound.conf
 
-# Final setup
+# Create non-root user for PulseAudio
 RUN useradd -m -G audio pulseuser
+
+# Add audio group
 WORKDIR /root/type_ws/
+RUN usermod -a -G audio root
+RUN apt-get update && apt install -y sox curl lame ydotool libsox-fmt-mp3 scdoc  \
+    && rm -rf /var/lib/apt/lists/*
+
+# WORKDIR /usr/local/src/whisper.cpp/build/bin
 CMD ["tail", "-f", "/dev/null"]
