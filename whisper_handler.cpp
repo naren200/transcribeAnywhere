@@ -57,7 +57,7 @@ private:
         }
     }
     void injectText(const std::string& text) {
-        std::string spacedText = "   "+text;
+        std::string spacedText = "   " + text;
         std::string sanitized = std::regex_replace(spacedText, std::regex("'"), "'\\''");
         
         try {
@@ -83,20 +83,13 @@ private:
         if (instance && signum == SIGINT) {
             std::cerr << "\n[SYSTEM] Ctrl+C received. Shutting down...\n";
             instance->keepRunning = false;
-            // Force pipe to unblock by closing it
             if (instance->whisperPipe) {
                 fclose(instance->whisperPipe);
                 instance->whisperPipe = nullptr;
             }
-            // Exit immediately if multiple Ctrl+C presses
-            static int ctrlc_count = 0;
-            if (++ctrlc_count >= 2) {
-                exit(1);
-            }
         }
     }
 
-    
     void inputHandler() {
         std::string command;
         while (keepRunning) {
