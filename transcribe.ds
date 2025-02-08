@@ -1,0 +1,9 @@
+(if
+  (matches (window_name) "transcribe")
+  (begin
+    (skip_tasklist)    ; Hide from taskbar
+    (above)            ; Keep window always on top (original Devil's Pie syntax)
+  )
+)
+
+

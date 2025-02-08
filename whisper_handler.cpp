@@ -197,16 +197,54 @@ public:
 
             // Inside the processing loop
             if (!currentLine.empty()) {
-                currentLine = std::regex_replace(currentLine, ansiEscape, "");
+                // Inside processWhisperStream() after reading currentLine:
+                std::string processedLine;
+                size_t lastPos = 0;
+                std::sregex_iterator it(currentLine.begin(), currentLine.end(), ansiEscape);
+                std::sregex_iterator end;
+
+                for (; it != end; ++it) {
+                    std::smatch match = *it;
+                    size_t escapeStart = match.position();
+                    size_t escapeLength = match.length();
+
+                    size_t lastNewline = currentLine.rfind('\n', escapeStart);
+                    
+                    if (lastNewline != std::string::npos) {
+                        processedLine += currentLine.substr(lastPos, lastNewline - lastPos + 1);
+                        lastPos = lastNewline + 1;
+                    } else {
+                        lastPos = escapeStart;
+                    }
+                    lastPos = escapeStart + escapeLength;
+                }
+
+                processedLine += currentLine.substr(lastPos);
+                currentLine = std::regex_replace(processedLine, ansiEscape, "");
+
+
+                //remove paranthesis and curly braces
                 currentLine = std::regex_replace(currentLine, std::regex(R"(\s*[\[\{].*?[\]\}])"), "");
                 currentLine = std::regex_replace(currentLine, std::regex(R"(\s*[\(\{].*?[\)\}])"), "");
-                currentLine = std::regex_replace(currentLine, std::regex(R"(\s+)"), " ");
-                currentLine = std::regex_replace(currentLine, std::regex(R"(^\s+|\s+$)"), " ");
 
-                if (!currentLine.empty() && transcriptionActive) {
+
+                // Collapse whitespace and clean line
+                currentLine = std::regex_replace(currentLine, std::regex(R"(\s+)"), " ");  // Multiple spaces -> single
+                currentLine = std::regex_replace(currentLine, std::regex(R"(^\s+|\s+$)"), " ");  // Trim edges
+
+                // After cleaning the transcribed text in processWhisperStream():
+                if (!currentLine.empty() && transcriptionActive && 
+                        currentLine.find_first_not_of(' ') != std::string::npos) {
                     injectText(currentLine);
                     std::cout << "\n[TRANSCRIPT] " << currentLine << std::endl;
+                    // saveToFile(currentLine);
                 }
+                
+                // currentLine = std::regex_replace(currentLine, ansiEscape, "");
+                // currentLine = std::regex_replace(currentLine, std::regex(R"(\s*[\[\{].*?[\]\}])"), "");
+                // currentLine = std::regex_replace(currentLine, std::regex(R"(\s*[\(\{].*?[\)\}])"), "");
+                // currentLine = std::regex_replace(currentLine, std::regex(R"(\s+)"), " ");
+                // currentLine = std::regex_replace(currentLine, std::regex(R"(^\s+|\s+$)"), " ");
             }
         }
 
@@ -244,7 +282,7 @@ int main() {
 
         std::cerr << "Using capture device: " << capture_device << "\n";
         handler.processWhisperStream(
-            "/usr/local/src/whisper.cpp/models/ggml-small.en.bin",
+            (std::string("/usr/local/src/whisper.cpp/models/") + std::getenv("MODEL")).c_str(),
             capture_device
         );
     } catch (const std::exception& e) {

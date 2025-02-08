@@ -21,6 +21,7 @@ services:
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - CAPTURE_DEVICE=${CAPTURE_DEVICE}
+      - MODEL=${MODEL}
     privileged: true
     stdin_open: true
     tty: true

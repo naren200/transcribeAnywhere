@@ -3,6 +3,7 @@
 # Get the directory where this script resides
 SCRIPT_DIR=$(dirname "$(realpath "$0")")
 
+echo $SCRIPT_DIR
 
 export AUDIO_GID=$(getent group audio | cut -d: -f3)
 
@@ -16,6 +17,9 @@ done
 
 export LOCAL_WS="$SCRIPT_DIR"
 export CAPTURE_DEVICE=${CAPTURE_DEVICE:-2}
+
+# Model Small-bin.en
+export MODEL="ggml-small.en.bin"
 
 # Default developer mode
 DEVELOPER="False"

@@ -1,129 +1,193 @@
-# transcribeAnywhere
+# TranscribeAnywhere
 
-A real-time speech-to-text transcription service using Vosk speech recognition, packaged in a Docker container. This application transcribes speech and automatically types the text anywhere you place your cursor, making it useful for dictation and accessibility purposes, especially communicating with locally-run and web-service LLMs.
+## Overview
 
+TranscribeAnywhere is an efficient transcription tool dedicated to Linux OS that enables seamless voice-to-text conversion using Whisper.cpp. The project is designed for users who want to transcribe their thoughts hands-free with minimal GPU memory usage. It requires a Linux-based operating system to function properly.
 
-## Features
+### Feature
 
-- Real-time speech-to-text transcription
-- Automatic text typing without manual intervention
-- Uses the large Vosk model (vosk-model-en-us-0.22-lgraph) for better accuracy
-- Docker containerized for easy deployment
-- ALSA audio integration
-- Clipboard integration
+- Supports **Whisper.cpp** for efficient transcription
+- **Low GPU memory usage** (1000 MiB)
+- **Docker-based deployment** for easy setup
+- **Multi-platform compatibility**
+- **Hotkey support** for quick start/stop
+- **Integration with AI platforms** (Perplexity, ChatGPT, Across Linux)
+- **Developer mode** for debugging and modifications
+- Real-time transcription with minimal latency
 
-## Prerequisites
+## Installation
 
-- Docker installed on your system
-- Linux operating system with ALSA and PulseAudio
-- Working microphone
-- X11 display server running
+### Prerequisites
 
-## Quick Start
+Ensure you have the following installed on your system:
 
-### Option 1: Using Pre-built Image
-Size of the image: 882.94 MB
+- **Docker**
+- **Devil's Pie** (for window management)
+- **XTerm** (for terminal-based interactions)
+- **PulseAudio** (for audio processing)
+
+### Install Required Dependencies
+
 ```bash
-docker pull naren200/transcribeanywhere:v1
+sudo apt update
+sudo apt install devilspie xterm
 ```
 
-### Option 2: Building from Source
+### Copy Configuration Files
 
-1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/transcribeAnywhere.git
+mkdir ~/.devilspie/
+sudo cp transcribe.ds ~/.devilspie/
+```
+
+## Setting Up TranscribeAnywhere
+
+### Option 1: Pull Prebuilt Docker Image
+
+```bash
+docker pull naren200/type_node:v1
+```
+
+### Option 2: Build from Source
+
+```bash
+git clone https://github.com/naren200/transcribeAnywhere.git
 cd transcribeAnywhere
+docker build -t naren200/type_node:v1 .
 ```
 
-2. Build the Docker image:
-```bash
-docker build -t naren200/transcribeanywhere:v1 .
-```
+## Running Transcription
 
-### Running the Container
+To start the transcription mode, run:
 
 ```bash
-docker run -it \
-    --device /dev/snd:/dev/snd \
-    -e DISPLAY=$DISPLAY \
-    -e PULSE_SERVER=unix:${XDG_RUNTIME_DIR}/pulse/native \
-    -v /tmp/.X11-unix:/tmp/.X11-unix \
-    -v ${XDG_RUNTIME_DIR}/pulse/native:${XDG_RUNTIME_DIR}/pulse/native \
-    -v ~/.config/pulse/cookie:/root/.config/pulse/cookie \
-    --group-add $(getent group audio | cut -d: -f3) \
-    naren200/transcribeanywhere:v1
+cd transcribeAnywhere
+./start_docker.sh
 ```
 
-## Project Structure
+To stop transcription mode:
 
-```
-transcribeAnywhere/
-├── transcribe.py    # Main Python script for speech recognition
-├── transcribe.sh    # Shell script wrapper
-├── Dockerfile       # Docker configuration
-└── README.md       # Documentation
+```bash
+cd transcribeAnywhere
+./stop_docker.sh
 ```
 
-## Configuration
+## Hotkey Assignments (Linux)
 
-### Audio Settings
-- Sample Rate: 16000 Hz
-- Frame Size: 8000
-- Buffer Size: 16000
-- Period Size: 8000
+For convenience, assign keyboard shortcuts. Use the following command to get the exact script directory and set it as SCRIPT_DIR:
 
-These can be adjusted in the ALSA configuration within the Dockerfile.
+```bash
+SCRIPT_DIR=$(pwd)
+```
+ 
 
-## Dependencies
+```bash
+$SCRIPT_DIR/start_transcribe.sh  # Ctrl+Alt+G
+$SCRIPT_DIR/stop_transcribe.sh # Ctrl+Alt+H
+```
 
-### System Dependencies
-- ffmpeg
-- sox
-- ALSA utilities
-- PulseAudio
-- X11
-- xdotool
-- xsel
+## Customization
 
-### Python Dependencies
-- vosk
-- sounddevice
-- numpy
-- scipy
-- noisereduce
+### Change the Whisper Model
+Change the Whisper Model
+
+Modify Dockerfile to specify a different model size by changing small.en to medium.en in line 34:
+```bash
+RUN bash ./models/download-ggml-model.sh medium.en
+```
+After making this change, rebuild the Docker image:
+```bash
+docker build -t naren200/type_node:v1 .
+```
+
+Modify `MODEL` under **start_docker.sh** to specify a different model
+
+```bash
+export MODEL="ggml-medium.en.bin"
+```
+
+### Changing Audio Capture Device
+
+To list available audio devices:
+
+```bash
+./start_docker.sh --capture=1
+```
+
+By default, the capture device is set to **2**. Change it if needed:
+
+```bash
+./start_docker.sh --capture=2
+```
+
+## Developer Mode
+
+To enable developer mode for debugging and manual testing:
+
+```bash
+./start_docker.sh --developer=true
+```
+
+This mode allows real-time modifications to **whisper\_handler.cpp**.
 
 ## Troubleshooting
+### Capture Device Issues
 
-1. Audio Device Issues
-   - Check if your microphone is properly connected
-   - Verify ALSA/PulseAudio configuration
-   - Check audio group permissions
+If the capture mode does not work, you can list the available devices inside the Docker image and specify the correct capture device manually. To list all available capture devices, run:
+```bash
+./start_docker.sh --capture=1
+```
+Example output, choose the capture device which best suits based on your system:
+```bash
+Using capture device: 1
+init: found 4 capture devices:
+init:    - Capture device #0: 'sof-hda-dsp, '
+init:    - Capture device #1: 'sof-hda-dsp,  (2)'
+init:    - Capture device #2: 'sof-hda-dsp,  (3)'
+init:    - Capture device #3: 'sof-hda-dsp,  (4)'
+init: attempt to open capture device 1 : 'sof-hda-dsp,  (2)' ...
+init: couldn't open an audio device for capture: ALSA: Couldn't open audio device: Invalid argument!
+main: audio.init() failed!
+```
+If an error occurs, try selecting a different device and updating the default value in **start_transcript.sh**.
 
-2. Display Issues
-   - Ensure X11 is running
-   - Verify DISPLAY environment variable
+### PulseAudio Issues
 
-3. Permission Issues
-   - Make sure user has access to audio group
-   - Check device permissions
+If the capture mode does not work, restart PulseAudio:
 
-## Known Limitations
+```bash
+pulseaudio -k  # Kill existing PulseAudio
+pulseaudio --start  # Start PulseAudio
+```
 
-- Currently supports English language only
-- Requires X11 display server
-- May experience latency with larger speech segments
-- Audio device sample rate must match configuration
+### Force Stop Transcription
 
-## Contributing
+If the model does not stop properly:
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+- Use the hotkey **Ctrl+Alt+H** to stop Docker.
+- Or, force shutdown using **Ctrl+C** (twice if needed).
+
+### Dockerfile Options
+
+- **Dockerfile\_large**: Uses a **7GB** model for enhanced accuracy.
+- Modify **line 34** in **Dockerfile** to change the model name.
+
+
+
+## System Requirements
+
+- GPU Memory: ~1000 MiB for whisper.cpp model
+- Online models require 1500-4500 MiB through OpenAI Whisper Python library
+- PulseAudio for audio capture
+
+## Credits
+
+This project is powered by:
+
+- [Whisper.cpp](https://github.com/ggerganov/whisper.cpp)
+- MIT License
+- Inspired by [voice_typing](https://github.com/themanyone/voice_typing)
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Acknowledgments
-
-- [Vosk Speech Recognition Toolkit](https://alphacephei.com/vosk/)
-- [Python sounddevice library](https://python-sounddevice.readthedocs.io/)
-- Docker community
+This project follows the **MIT License**, ensuring free usage and modifications.
