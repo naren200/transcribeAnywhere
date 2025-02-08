@@ -1,11 +1,11 @@
 # Stage 1: Builder environment
-FROM ubuntu:22.04 as builder
+FROM ubuntu:22.04 AS builder
 
 # Install build dependencies
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    build-essential \
     git \
     make \
-    build-essential \
     libsdl2-dev \
     ffmpeg \
     wget \
@@ -42,8 +42,10 @@ RUN bash ./models/download-ggml-model.sh small.en && \
 # Stage 2: Runtime environment
 FROM ubuntu:22.04
 
-# Install runtime dependencies
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+# Install ALL dependencies in one layer
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    build-essential \
     libsdl2-2.0-0 \
     ffmpeg \
     pulseaudio \
@@ -55,6 +57,9 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
     lame \
     ydotool \
     libsox-fmt-mp3 \
+    g++ \
+    libasound2-dev \
+    libx11-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy CUDA runtime

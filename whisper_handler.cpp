@@ -10,6 +10,8 @@
 #include <filesystem>
 #include <regex>
 #include <cstdlib>
+#include <thread>
+#include <chrono>
 
 
 struct TranscriptionData {
@@ -21,6 +23,16 @@ struct TranscriptionData {
 class WhisperStreamHandler {
 private:
     std::string outputPath = "/app/output/live_transcript.txt";
+    bool ydotoolInitialized = false;
+    
+    void initializeYdotool() {
+        if (!ydotoolInitialized) {
+            system("pkill ydotool"); // Kill any existing instances
+            system("ydotool &>/dev/null &");
+            std::this_thread::sleep_for(std::chrono::milliseconds(700));
+            ydotoolInitialized = true;
+        }
+    }
 
     // Function to clear or delete the file if it exists
     void initializeFile() {
@@ -47,12 +59,31 @@ private:
     void injectText(const std::string& text) {
         std::string sanitized = std::regex_replace(text, std::regex("'"), "'\\''");
         std::string cmd = "ydotool type '" + sanitized + "'";
-        system(cmd.c_str());
+
+        try {
+            if (!ydotoolInitialized) {
+                initializeYdotool();
+            }
+            
+            std::string cmd = "ydotool type --key-delay 10 '" + sanitized + "' 2>/dev/null";
+            int result = system(cmd.c_str());
+            
+            if (result != 0) {
+                std::cerr << "ydotool command failed, reinitializing..." << std::endl;
+                ydotoolInitialized = false;
+                initializeYdotool();
+                system(cmd.c_str());
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Error injecting text: " << e.what() << std::endl;
+        }
+
     }
-    
+        
 public:
     WhisperStreamHandler() {
         initializeFile(); 
+        initializeYdotool();
     }
 
     std::string executeCommand(const std::string& cmd) {
@@ -136,8 +167,8 @@ public:
 
                 // After cleaning the transcribed text in processWhisperStream():
                 if (!currentLine.empty()) {
-                    // saveToFile(currentLine);
                     injectText(currentLine);
+                    // saveToFile(currentLine);
                 }
                 
             }
