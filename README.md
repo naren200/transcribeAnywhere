@@ -27,7 +27,18 @@ Ensure you have the following installed on your system:
 - **PulseAudio** (for audio processing)
 
 ### Install Required Dependencies
+1. **Install Docker on Ubuntu 22.04**  
+   Follow the guide to install Docker:  
+   [How to Install and Use Docker on Ubuntu 22.04](https://www.digitalocean.com/community/tutorials/how-to-install-and-use-docker-on-ubuntu-22-04)
 
+2. **Perform Post-Installation Steps for Docker**  
+   Ensure you complete the post-installation steps as outlined here:  
+   [Post-Installation Steps for Docker on Linux](https://docs.docker.com/engine/install/linux-postinstall/)
+
+3. **Install Docker Compose on Ubuntu 22.04**  
+   Set up Docker Compose using the instructions here:  
+   [How to Install and Use Docker Compose on Ubuntu 22.04](https://www.digitalocean.com/community/tutorials/how-to-install-and-use-docker-compose-on-ubuntu-22-04)
+4. **Installation of required dependancies**
 ```bash
 sudo apt update
 sudo apt install devilspie xterm
